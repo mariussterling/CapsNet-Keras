@@ -1,27 +1,27 @@
 """
 Keras implementation of CapsNet in Hinton's paper Dynamic Routing Between Capsules.
 The current version maybe only works for TensorFlow backend. Actually it will be straightforward to re-write to TF code.
-Adopting to other backends should be easy, but I have not tested this. 
+Adopting to other backends should be easy, but I have not tested this.
 
 Usage:
        python capsulenet.py
        python capsulenet.py --epochs 50
        python capsulenet.py --epochs 50 --routings 3
        ... ...
-       
+
 Result:
     Validation accuracy > 99.5% after 20 epochs. Converge to 99.66% after 50 epochs.
     About 110 seconds per epoch on a single GTX1070 GPU card
-    
+
 Author: Xifeng Guo, E-mail: `guoxifeng1990@163.com`, Github: `https://github.com/XifengGuo/CapsNet-Keras`
 """
-
 import numpy as np
 from keras import layers, models, optimizers
 from keras import backend as K
 from keras.utils import to_categorical
 import matplotlib.pyplot as plt
-from utils import combine_images
+from utils2 import combine_images
+from utils2 import *
 from PIL import Image
 from capsulelayers import CapsuleLayer, PrimaryCap, Length, Mask
 
@@ -43,11 +43,10 @@ def CapsNet(input_shape, n_class, routings):
     conv1 = layers.Conv2D(filters=256, kernel_size=9, strides=1, padding='valid', activation='relu', name='conv1')(x)
 
     # Layer 2: Conv2D layer with `squash` activation, then reshape to [None, num_capsule, dim_capsule]
-    primarycaps = PrimaryCap(conv1, dim_capsule=8, n_channels=32, kernel_size=9, strides=2, padding='valid')
+    primarycaps = PrimaryCap(conv1, dim_capsule=4, n_channels=32, kernel_size=9, strides=2, padding='valid')
 
     # Layer 3: Capsule layer. Routing algorithm works here.
-    digitcaps = CapsuleLayer(num_capsule=n_class, dim_capsule=16, routings=routings,
-                             name='digitcaps')(primarycaps)
+    digitcaps = CapsuleLayer(num_capsule=n_class, dim_capsule=16, routings=routings, name='digitcaps')(primarycaps)
 
     # Layer 4: This is an auxiliary layer to replace each capsule with its length. Just to match the true label's shape.
     # If using tensorflow, this will not be necessary. :)
@@ -141,7 +140,7 @@ def train(model, data, args):
     model.save_weights(args.save_dir + '/trained_model.h5')
     print('Trained model saved to \'%s/trained_model.h5\'' % args.save_dir)
 
-    from utils import plot_log
+    from utils2 import plot_log
     plot_log(args.save_dir + '/log.csv', show=True)
 
     return model
@@ -192,6 +191,8 @@ def load_mnist():
     # the data, shuffled and split between train and test sets
     from keras.datasets import mnist
     (x_train, y_train), (x_test, y_test) = mnist.load_data()
+    x_train = x_train[:300]
+    y_train = y_train[:300]
 
     x_train = x_train.reshape(-1, 28, 28, 1).astype('float32') / 255.
     x_test = x_test.reshape(-1, 28, 28, 1).astype('float32') / 255.
@@ -229,14 +230,17 @@ if __name__ == "__main__":
                         help="Digit to manipulate")
     parser.add_argument('-w', '--weights', default=None,
                         help="The path of the saved weights. Should be specified when testing")
-    args = parser.parse_args()
+    args = parser.parse_known_args()[0] # parse_args()
     print(args)
+    args.epochs=5
+    args.batch_size=25
 
     if not os.path.exists(args.save_dir):
         os.makedirs(args.save_dir)
 
     # load data
     (x_train, y_train), (x_test, y_test) = load_mnist()
+
 
     # define model
     model, eval_model, manipulate_model = CapsNet(input_shape=x_train.shape[1:],
@@ -246,6 +250,7 @@ if __name__ == "__main__":
 
     # train or test
     if args.weights is not None:  # init the model weights with provided one
+        args.weights = 'result/trained_model.h5'
         model.load_weights(args.weights)
     if not args.testing:
         train(model=model, data=((x_train, y_train), (x_test, y_test)), args=args)
